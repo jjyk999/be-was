@@ -9,7 +9,9 @@ import model.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.xml.crypto.Data;
 import java.io.IOException;
+import java.nio.Buffer;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -41,6 +43,8 @@ public class RequestHandler implements Runnable {
             int bodyLength = 0;
             String userInfoString = null;
             DataOutputStream dos = new DataOutputStream(out);
+
+
 
             // POST request 읽어오기
             if(splitHeader[0].equals("POST")) {
@@ -83,7 +87,29 @@ public class RequestHandler implements Runnable {
                     }
                 }
             }
-            //logger.debug(">>>>>>CHECK");
+            else {
+                while((line = br.readLine()) != null) {
+                    //logger.debug(line);
+                    if(line.contains("Cookie") || line.isEmpty()) {
+                        logger.debug(line);
+
+                        String[] cookieSplit = line.split("=");
+                        String cookieSid = cookieSplit[1];
+                        logger.debug("Cookie sid >>>>>> " + cookieSid);
+
+                        if(SessionManager.getUserInfo(cookieSid) != null) {
+                            logger.debug("RequestHandler >>>> session is valid.");
+                            isValidSession = true;
+                            logger.debug("ReqeustHandler >>>> is session valid? : " + isValidSession);
+                        }
+                        else {
+                            logger.debug("RequestHandler >>>> not valid session.");
+                            logger.debug("RequestHandler >>>> is session valid? : " + isValidSession);
+                        }
+                        break;
+                    }
+                }
+            }
             // 컨텐츠 타입 지원.
             String[] req = ContentHandler.supportExtraContent(splitHeader[1]);
             reqPath = req[0];
@@ -133,19 +159,18 @@ public class RequestHandler implements Runnable {
 
             }
             // 로그인 창 진입. 세션 유효할 시 메인화면으로 리다이렉션
-            else if (splitHeader[1].contains("login") && splitHeader[0].equals("GET")) {
+            /*else if (splitHeader[1].contains("login") && splitHeader[0].equals("GET")) {
                 if(isValidSession) {
                     logger.debug(">>>>>> valid session. no need for login...");
                     response302Header(dos, "index.html");
                 }
                 else {
                     body = readFile(reqPath);
-                    //logger.debug(">>>>>> " + reqPath);
                     response200Header(dos, body.length, reqType);
                     responseBody(dos, body);
                 }
 
-            }
+            }*/
             // 회원가입 정보 추출 & 리다이렉트
             else if(splitHeader[1].contains("create")) {
                 String userId = null, userPwd = null, userName = null, userEmail = null;
@@ -193,14 +218,93 @@ public class RequestHandler implements Runnable {
                 response302Header(dos, "index.html");
 
             }
+            // 사용자 목록 출력..
+            else if(splitHeader[1].equals("/user/list")) {
+                //response302Header(dos, "user/list.html");
+                logger.debug("isValidSession >>>> " + isValidSession);
+                if(isValidSession) {
+                    File file = new File(reqPath + "/user/list.html");
+                    logger.debug("RequestHandler >>>> " + reqPath + "/user/list.html");
+
+                    try {
+                        BufferedReader bf = new BufferedReader(new FileReader(file));
+                        StringBuilder sb = new StringBuilder();
+                        while((line = bf.readLine()) != null) {
+                            if(line.contains("<tbody>")) {
+                                sb.append(line);
+                                while(!(line = bf.readLine()).contains("</tbody>"));
+                                ArrayList<User> userArrayList = (ArrayList<User>) Database.findAll();
+                                for(int i = 0 ; i < userArrayList.size() ; i++) {
+                                    User user_t = userArrayList.get(i);
+                                    sb.append("\t\t\t\t\t<tr>");
+                                    sb.append("\t\t\t\t\t\t<th scope=\"row\">");
+                                    sb.append(i + 1);
+                                    sb.append("</th> <td>");
+                                    sb.append(user_t.getUserId());
+                                    sb.append("</td> <td>");
+                                    sb.append(user_t.getName());
+                                    sb.append("</td> <td>");
+                                    sb.append(user_t.getEmail());
+                                    sb.append("</td><td><a href=\"#\" class=\"btn btn-success\" role=\"button\">수정</a></td>");
+                                    sb.append("\t\t\t\t\t</tr>\r\n");
+                                }
+                                sb.append("\t\t\t\t</tbody>\r\n");
+                            }
+                            else if (line.contains("role=\"button\">회원가입")) {
+                                continue;
+                            }
+                            sb.append(line);
+                            sb.append(System.lineSeparator());
+                        }
+                        body = sb.toString().getBytes();
+                        response200Header(dos, body.length, reqType);
+                        responseBody(dos, body);
+                    } catch(FileNotFoundException e) {
+
+                    }
+                }
+                else {
+                    body = readFile(reqPath);
+                    response200Header(dos, body.length, reqType);
+                    responseBody(dos, body);
+                }
+            }
+            else if(splitHeader[1].contains("html") && splitHeader[0].equals("GET")){
+                // 동적 HTML
+                if(isValidSession) {
+                    File file = new File(reqPath);
+
+                    try {
+                        BufferedReader bf = new BufferedReader(new FileReader(file));
+                        StringBuilder sb = new StringBuilder();
+                        while((line = bf.readLine()) != null) {
+                            if(line.contains("role=\"button\">로그인")) {
+                                continue;
+                            }
+                            else if (line.contains("role=\"button\">회원가입")) {
+                                continue;
+                            }
+                            sb.append(line);
+                            sb.append(System.lineSeparator());
+                        }
+                        body = sb.toString().getBytes();
+                        response200Header(dos, body.length, reqType);
+                        responseBody(dos, body);
+                    } catch(FileNotFoundException e) {
+
+                    }
+                }
+                else {
+                    body = readFile(reqPath);
+                    response200Header(dos, body.length, reqType);
+                    responseBody(dos, body);
+                }
+            }
             else {
                 body = readFile(reqPath);
-                //logger.debug(">>>>>> " + reqPath);
                 response200Header(dos, body.length, reqType);
                 responseBody(dos, body);
-                //logger.debug("pASSED");
             }
-
 
         } catch (IOException e) {
             logger.error(e.getMessage());
@@ -267,6 +371,22 @@ public class RequestHandler implements Runnable {
         String[] userInfoSplitted = {userId, userPwd, userName, userEmail};
         return userInfoSplitted;
     }
+
+    /*public boolean checkSession(String cookie) {
+        String[] cookieSplit = cookie.split("=");
+        String cookieSid = cookieSplit[1];
+        logger.debug("Cookie sid >>>>>> " + cookieSid);
+
+        if(SessionManager.getUserInfo(cookieSid) != null) {
+            logger.debug("RequestHandler >>>> session is valid.");
+            isValidSession = true;
+            logger.debug("ReqeustHandler >>>> is session valid? : " + isValidSession);
+        }
+        else {
+            logger.debug("RequestHandler >>>> not valid session.");
+            logger.debug("RequestHandler >>>> is session valid? : " + isValidSession);
+        }
+    }*/
 
     public byte[] readFile(String filePath) throws FileNotFoundException {
         File file = new File(filePath);
