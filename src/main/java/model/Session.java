@@ -16,4 +16,20 @@ public class Session {
         this.accessedTime = System.currentTimeMillis();
     }
 
+    public static Session of(String key, Object value) {
+        return new Session(key, value);
+    }
+
+    public Object getValue(String key) {
+        return sessionInfo.get(key);
+    }
+
+    public void updateAccessedTime() {
+        this.accessedTime = System.currentTimeMillis();
+    }
+
+    public boolean isExpired() {
+        return this.accessedTime + SESSION_TIMEOUT < System.currentTimeMillis();
+    }
+
 }
